@@ -1,3 +1,19 @@
+##############################################################################
+## calculate the heterostrain and twist angle for a provived STM dataset.   ##
+## this is accomplished by fitting the tunneling intensities to bivariate   ##
+## gaussians, then preforming Deluanay triangulation on the resultant       ##
+## gasssian centers.                                                        ##
+## WARNING: this is highly dependent on the hyper-parameters chosen, which  ##
+## are printed to an output file upon execution for book keeping. Some      ##
+## example datasets and their corresponding parameters are provided in the  ##
+## folder 'examples' for reference.                                         ##
+##                                                                          ##
+## usage : python3 STMtriangulate.py folder/dataset.txt                     ##
+## hyperparameters are set in the dictionary at the bottom of the file.     ##
+## must be called in a directory containing a folder holding the STM data   ##
+## STM data must be formatted in accordance with the provided example data. ## 
+##############################################################################
+
 import numpy as np
 from scipy.optimize import curve_fit, least_squares
 import matplotlib.pyplot as plt
@@ -466,21 +482,22 @@ if __name__ == '__main__':
         "upperbound_sigma"  : 1e3,             # throw away points with sigmas > this upperbound before filtering
         "guess_theta_t"     : 0.2,             # degrees of guess angle for twist
         "guess_theta_s"     : 25,              # guess angle of heterostrain application
-        "guess_hs"          : 0.05,             # guessed percent heterostrain
+        "guess_hs"          : 0.05,            # guessed percent heterostrain
         "xtol"              : 1e-1,            # tolerance for gaussian fit, decrease for noisy data where average peaks are ok
-        "removed_pts"       : [],
-        "manual_removal"    : False,
-        "manual_removal_before" : False,
-        "removed_before_keys" : [],
-        "removed_pt_keys"   : [],
+        "removed_pts"       : [],              # for manual remove of points of known indeces
+        "manual_removal"    : False,           # for manual remove of points, will query for labels (set manual_removal_plot=True)
+        "manual_removal_before" : False,       # same as above but for point removal before fit
+        "removed_before_keys" : [],            # to print removed points to output
+        "removed_pt_keys"   : [],              # to print removed points to output
         'manual_removal_plot' : False,         # bool to plot peaks before manual removal selection
-        'guess_radius_criterion' : -0.1,      # decrease me if there are a lot of erroneous mall peaks
+        'guess_radius_criterion' : -0.1,       # decrease me if there are a lot of erroneous mall peaks
         'combine_criterion' : 4.0,             # increase me if plot_avg breaks peaks into two nearby circles
-        'lowerbound_filter' : 2,            # increase me if it looks like the background intensity of plot_avg is too > 0.0
-        'upperbound_filter' : -1,
-        'ml_criterion' : 0.75,
-        'times_to_combine' : 3,
-        'truncation' : False,
+        'lowerbound_filter' : 2,               # increase me if it looks like the background intensity of plot_avg is too > 0.0, -1 if off
+        'upperbound_filter' : -1,              # increase me to truncate data above a threshold, -1 if off
+        'ml_criterion' : 0.75,                 # remove points that have mean delaunay lengths to nearby points greater than a given criterion
+                                               # due to common issue with delaunay algorithm - will include erroneous connections
+        'times_to_combine' : 3,                # times to run through the nearby point combination proecedure 
+        'truncation' : False,                  # trucate field of view
     }
 
     # get inputs
