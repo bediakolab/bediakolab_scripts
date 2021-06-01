@@ -136,29 +136,6 @@ def compute_Vh(Vapp, dos, erange):
     def dfermi_dmu(mu, E):
         return g_beta * np.exp( g_beta * (E - mu))/( (1 + np.exp(g_beta * (E - mu)))**2 )
 
-    # plot some important functions to check
-    sanity_check = False
-    if (sanity_check):
-        f, ax = plt.subplots()
-        mu = 0.0
-        int1 = [ fermif(mu, erange[i]) * dos[i] for i in range(len(erange)) ] # 1/eV
-        int2 = [ dfermi_dmu(mu, erange[i]) * dos[i] for i in range(len(erange)) ] # 1/(eV)^2
-        f = [ fermif(mu, e) for e in erange ] # dimensionless
-        dfdmu = [ dfermi_dmu(mu, e) for e in erange ] # 1/eV
-        fake_linear_dos = [ abs(e) for e in erange ]
-        dftimesfakedos = [ dfermi_dmu(mu, erange[i]) * fake_linear_dos[i] for i in range(len(erange)) ]
-        ax.plot(erange,normalize(erange,f),'r',label='normalized f(mu=0)')
-        ax.plot(erange,normalize(erange,int1),'k',label='normalized f(mu=0)*dos')
-        ax.plot(erange,normalize(erange,dos),'grey',label='normalized dos')
-        ax.plot(erange,normalize(erange,dfdmu),'c',label='normalized df/dmu(mu=0)')
-        ax.plot(erange,normalize(erange,int2),'b',label='normalized df/dmu(mu=0)*dos')
-        ax.plot(erange,normalize(erange,fake_linear_dos),'r--',label='normalized fake dos')
-        ax.plot(erange,normalize(erange,dftimesfakedos),'c--',label='normalized df/dmu(mu=0)*fake dos')
-        ax.set_aspect(1.0/ax.get_data_ratio(), adjustable='box')
-        ax.set_xlabel('E (eV)')
-        plt.legend()
-        plt.savefig("sanity_check.png", dpi=600)
-
     # cost function to get Vh self consistently
     def _costfunc(Vh):
         Vq = Vapp - Vh[0] # Vapp = Vq + Vh, in Volts
