@@ -11,7 +11,7 @@
 ## usage : python3 STMtriangulate.py folder/dataset.txt                     ##
 ## hyperparameters are set in the dictionary at the bottom of the file.     ##
 ## must be called in a directory containing a folder holding the STM data   ##
-## STM data must be formatted in accordance with the provided example data. ## 
+## STM data must be formatted in accordance with the provided example data. ##
 ##############################################################################
 
 import numpy as np
@@ -22,6 +22,7 @@ import pandas as pd
 from skimage import measure
 from scipy.spatial import Delaunay
 import re
+import os
 import sys
 import seaborn as sns
 
@@ -159,7 +160,7 @@ def combine_nearby_spots(spots, combine_criterion):
 #   plots to the provided mpl axis
 #   returns vectors of heterostrain and twist angle
 #   will plot data, gassian fit, Delaunay mesh, and fit heterostrain/twist to provided ax
-def mesh_process(dat, ax, params):
+def mesh_process(dat, filedir, chunkno, nchunks, params):
 
     # get domain and normalize
     (nx, ny) = dat.shape
@@ -173,7 +174,10 @@ def mesh_process(dat, ax, params):
     spots = []
     rads = []
     if (params['plot_avg']):
+        f, ax = plt.subplots()
         ax.imshow(dat)
+        plt.show()
+        plt.close()
 
     # plot contours and averages
     for n, contour in enumerate(contours):
@@ -228,6 +232,7 @@ def mesh_process(dat, ax, params):
 
     # plot averaged spots
     if (params['plot_avg']):
+        f, ax = plt.subplots()
         ax.axis('image')
         for i in range(len(spots)):
             circle = plt.Circle((spots[i][0],spots[i][1]), color='r', radius=spots[i][2], linewidth=2.5, fill=False)
@@ -235,6 +240,7 @@ def mesh_process(dat, ax, params):
         ax.set_xticks([])
         ax.set_yticks([])
         plt.show()
+        plt.close()
         print("exiting after plot_avg, set this false to continue")
         exit()
 
@@ -294,11 +300,13 @@ def mesh_process(dat, ax, params):
 
         # show points for user to pick
         if (params['manual_removal_plot']):
-            ax.imshow(dat, origin='bottom', extent=(0, 1, 0, 1))
+            f, ax = plt.subplots()
+            ax.imshow(dat, origin='lower', extent=(0, 1, 0, 1))
             ax.contour(X, Y, fit, colors='w')
             ax.axis('image')
             plt.plot(points[:,0], points[:,1], 'ro')
             plt.show()
+            plt.close()
 
         # remove points
         if (len(params["removed_pt_keys"]) == 0):
@@ -331,14 +339,14 @@ def mesh_process(dat, ax, params):
         exit(0)
 
     # plot fit guassians and Delaunay mesh
-    ax.imshow(dat, origin='bottom', extent=(0, 1, 0, 1))
+    f, ax = plt.subplots()
+    ax.imshow(dat, origin='lower', extent=(0, 1, 0, 1))
     ax.contour(X, Y, fit, colors='w')
     ax.axis('image')
     ax.set_xticks([])
     ax.set_yticks([])
-    plt.plot(points[:,0], points[:,1], 'ro')
-    if (params["plot_full_mesh"]):
-        plt.triplot(points[:,0], points[:,1], tri.simplices, color='b')
+    ax.plot(points[:,0], points[:,1], 'ro')
+    ax.triplot(points[:,0], points[:,1], tri.simplices, color='b')
 
     # obtain heterostrains and angles from mesh
     print('calculating heterostrain and twist')
@@ -366,10 +374,9 @@ def mesh_process(dat, ax, params):
             np.abs(a23 - np.pi/3) < params['angle_criterion'] and
             np.abs(a31 - np.pi/3) < params['angle_criterion'] and
             ( m_l - np.mean(lens))/np.std(lens) < params['ml_criterion'] ):
-
-            plt.plot([v2[0], v3[0]], [v2[1], v3[1]], color="r")
-            plt.plot([v2[0], v1[0]], [v2[1], v1[1]], color="r")
-            plt.plot([v3[0], v1[0]], [v3[1], v1[1]], color="r")
+            ax.plot([v2[0], v3[0]], [v2[1], v3[1]], color="r")
+            ax.plot([v2[0], v1[0]], [v2[1], v1[1]], color="r")
+            ax.plot([v3[0], v1[0]], [v3[1], v1[1]], color="r")
             center_x = np.mean([v1[0], v2[0], v3[0]])
             center_y = np.mean([v1[1], v2[1], v3[1]])
             theta_t, theta_s, eps = fit_heterostrain(l1, l2, l3, params)
@@ -377,6 +384,9 @@ def mesh_process(dat, ax, params):
             het_strains.append(np.abs(eps*100))
 
     plt.title('angle = {:.2f} deg, het strain = {:.2f}%'.format(np.mean(thetas), np.mean(het_strains)))
+    plt.savefig("{}/mesh_chunk{}of{}.png".format(filedir, chunkno+1, nchunks), dpi=600)
+    plt.close()
+
     return thetas, het_strains
 
 # reads in excel file and returns partitioned data
@@ -485,25 +495,25 @@ if __name__ == '__main__':
         "guess_hs"          : 0.05,            # guessed percent heterostrain
         "xtol"              : 1e-1,            # tolerance for gaussian fit, decrease for noisy data where average peaks are ok
         "removed_pts"       : [],              # for manual remove of points of known indeces
-        "manual_removal"    : False,           # for manual remove of points, will query for labels (set manual_removal_plot=True)
+        "manual_removal"    : True,            # for manual remove of points, will query for labels (set manual_removal_plot=True)
         "manual_removal_before" : False,       # same as above but for point removal before fit
         "removed_before_keys" : [],            # to print removed points to output
         "removed_pt_keys"   : [],              # to print removed points to output
-        'manual_removal_plot' : False,         # bool to plot peaks before manual removal selection
+        'manual_removal_plot' : True,          # bool to plot peaks before manual removal selection
         'guess_radius_criterion' : -0.1,       # decrease me if there are a lot of erroneous mall peaks
         'combine_criterion' : 4.0,             # increase me if plot_avg breaks peaks into two nearby circles
         'lowerbound_filter' : 2,               # increase me if it looks like the background intensity of plot_avg is too > 0.0, -1 if off
         'upperbound_filter' : -1,              # increase me to truncate data above a threshold, -1 if off
         'ml_criterion' : 0.75,                 # remove points that have mean delaunay lengths to nearby points greater than a given criterion
                                                # due to common issue with delaunay algorithm - will include erroneous connections
-        'times_to_combine' : 3,                # times to run through the nearby point combination proecedure 
+        'times_to_combine' : 3,                # times to run through the nearby point combination proecedure
         'truncation' : False,                  # trucate field of view
     }
 
     # get inputs
     params['filename'] = sys.argv[1]
-    filedir = params['filename'].split('/')
-    filedir = '/'.join(filedir[0:1])
+    filedir = os.path.split(params['filename'])
+    filedir = filedir[0]
 
     # parse
     chunks, FOV_len = read(params['filename'], params['num_slices'])
@@ -514,11 +524,9 @@ if __name__ == '__main__':
     # process chunks
     for i in range(nchunks):
         # process chunk i
-        f, ax = plt.subplots()
         print("processing chunk {} of {} ".format(i+1,nchunks))
         (nx, ny) = chunks[i].shape
-        thetas, het_strains = mesh_process(chunks[i], ax, params)
-        plt.savefig("{}/mesh_chunk{}of{}.png".format(filedir, i+1,nchunks), dpi=600)
+        thetas, het_strains = mesh_process(chunks[i], filedir, i, nchunks, params)
 
         # plot histograms
         f, (ax1, ax2) = plt.subplots(1,2)
