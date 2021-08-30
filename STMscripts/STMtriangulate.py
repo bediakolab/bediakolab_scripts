@@ -59,7 +59,6 @@ def get_dist(v1, v2):
 
 # determine heterostrain and twist angle given lengths of moire triangle
 def fit_heterostrain(l1, l2, l3, params):
-
     delta = 0.16 # graphene Poisson ratio
 
     # returns residuals
@@ -215,7 +214,7 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
                 print("{}\t\t\t\t({:.4f},{:.4f})".format(i, spots[i][0], spots[i][1]))
                 i += 1
             remove_i = input("Enter number of removed point: , -1 to terminate\n")
-            while (int(remove_i) is not -1):
+            while (int(remove_i) != -1):
                 i = int(remove_i.strip())
                 params["removed_before_keys"].append(i)
                 bool_arr[i] = 0 # remove point i
@@ -316,7 +315,7 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
                 print("{}\t\t\t\t({:.4f},{:.4f})".format(i, points[i,0], points[i,1]))
                 i += 1
             remove_i = input("Enter number of removed point: , -1 to terminate\n")
-            while (int(remove_i) is not -1):
+            while (int(remove_i) != -1):
                 i = int(remove_i.strip())
                 params["removed_pts"].append((points[i,0], points[i,1]))
                 params["removed_pt_keys"].append(i)
