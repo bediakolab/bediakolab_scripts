@@ -209,12 +209,18 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
     f, ax = plt.subplots()
     ax.imshow(dat, origin='lower')
     ax.axis('image')
+    AA_area = 0
     for i in range(len(spots)):
+        rad = spots[i][2]
         circle = plt.Circle((spots[i][0],spots[i][1]), color='r', radius=spots[i][2], linewidth=2.5, fill=False)
         ax.text(spots[i][0],spots[i][1], i)
+        AA_area += np.pi * rad * rad
         ax.add_patch(circle)
     ax.set_xticks([])
     ax.set_yticks([])
+    print('total AA area in the displayed circles is {} (this will depend on threshold value used)'.format(AA_area))
+    print('total area in scan is {} '.format(nx*ny))
+    print('fraction AA is around {} based on AA circle guess (this will depend on threshold value used)'.format(AA_area/(nx*ny)))
     ax.set_title("showing first guess for AA centers \n save this plot for manual adjustment \n close plot to continue")
     plt.show()
 
@@ -241,10 +247,16 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
     f, ax = plt.subplots()
     ax.imshow(dat, origin='lower')
     ax.axis('image')
+    AA_area = 0
     for i in range(len(spots)):
-        circle = plt.Circle((spots[i][0],spots[i][1]), color='r', radius=spots[i][2], linewidth=2.5, fill=False)
+        rad = spots[i][2]
+        circle = plt.Circle((spots[i][0],spots[i][1]), color='r', radius=rad, linewidth=2.5, fill=False)
+        AA_area += np.pi * rad * rad
         ax.text(spots[i][0],spots[i][1], i)
         ax.add_patch(circle)
+    print('total AA area in the displayed circles is {} (this will depend on threshold value used)'.format(AA_area))
+    print('total area in scan is {} '.format(nx*ny))
+    print('fraction AA is around {} based on filtered AA circles (this will depend on threshold value used)'.format(AA_area/(nx*ny)))
     ax.set_xticks([])
     ax.set_yticks([])
     ax.set_title("showing AA centers after manual adjustment, close to continue")
@@ -273,8 +285,17 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
     sigs   = np.zeros((len(spots), 1))
     intens = np.zeros((len(spots), 1))
     fit    = np.zeros(dat.shape)
+    AA_area = 0
     for i in range(len(spots)):
         g = gaussian(X, Y, *popt[i*4:i*4+4])
+        #f, ax = plt.subplots()
+        #ax.imshow(g, origin='lower', extent=(0, 1, 0, 1))
+        #points[i, :] = popt[i*4:i*4+2]
+        #sigs[i] = popt[i*4+2]
+        #radius = sigs[i] * 0.8326182348
+        #circle = plt.Circle((points[i, 0], points[i, 1]), color='g', radius=(radius), linewidth=2.5, fill=False)
+        #ax.add_patch(circle)
+        #plt.show()
         if (popt[i*4] > 1.5 or popt[i*4+1] > 1.5):
             print("removing {},{} from FOV filter".format(popt[i*4], popt[i*4+1]))
             points[i, :] = np.nan
@@ -282,12 +303,16 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
             intens[i] = np.nan
         else:
             points[i, :] = popt[i*4:i*4+2]
-            sigs[i] = popt[i*4+3]
+            sigs[i] = popt[i*4+2]
+            radius = sigs[i] * 0.8326182348
+            AA_area += np.pi * radius * radius
             try:
                 intens[i] = dat[int(points[i, 1]*ny),int(points[i, 0]*nx)]
             except:
                 intens[i] = np.nan
         fit += g
+    print('fraction AA is around {} based on guassians (area fraction in the green circles shown) \n--> (using FWHM as diameter, I suggest increasing xtol from default to rely on this value)'.format(AA_area))
+    print('--> WARNING: this is an overestimate as it right now just calculates the area in all green circles and doesnt account for them bleeding out of the FOV')
 
     # fit mesh
     print('meshing')
@@ -305,6 +330,10 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
     ax.imshow(dat, origin='lower', extent=(0, 1, 0, 1))
     ax.contour(X, Y, fit, colors='w')
     ax.axis('image')
+    for i in range(len(sigs)):
+        radius = sigs[i] * 0.8326182348
+        circle = plt.Circle((points[i, 0], points[i, 1]), color='g', radius=(radius), linewidth=2.5, fill=False)
+        ax.add_patch(circle)
     ax.set_xticks([])
     ax.set_yticks([])
     ax.plot(points[:,0], points[:,1], 'ro')
