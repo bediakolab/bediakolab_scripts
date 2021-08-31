@@ -25,6 +25,30 @@ import re
 import os
 import sys
 import seaborn as sns
+from time import sleep
+
+def manual_define_point(img, spots):
+    plt.close('all')
+    fig, ax = plt.subplots()
+    points = []
+    def click_event(click):
+        x,y = click.xdata, click.ydata
+        points.append([x, y])
+        ax.scatter(x,y,color='b')
+        fig.canvas.draw()
+        #if len(points) == 1:
+        #    fig.canvas.mpl_disconnect(cid)
+        #    sleep(1)
+        #    plt.close('all')
+    ax.imshow(img, origin='lower')
+    ax.set_title('press to define new center for this point, close plot when done')
+    for i in range(len(spots)):
+        circle = plt.Circle((spots[i][0],spots[i][1]), color='r', radius=spots[i][2], linewidth=2.5, fill=False)
+        ax.text(spots[i][0],spots[i][1], i)
+        ax.add_patch(circle)
+    cid = fig.canvas.mpl_connect('button_press_event', click_event)
+    plt.show()
+    return points
 
 # 2d gaussian
 def gaussian(x, y, x0, y0, alpha, A):
@@ -87,30 +111,13 @@ def fit_heterostrain(l1, l2, l3, params):
     return opt.x # theta_t, theta_s, eps
 
 # normalizes dataset, filtering out low intensity outliers if requested
-def normalize(dat, lowerbound_filter, upperbound_filter, truncation):
+def normalize(dat, truncation):
     # normalize
     (nx, ny) = dat.shape
     if ( truncation ):
         d_avg = np.mean(dat[0:nx-50,0:ny])
         d_std = np.std(dat[0:nx-50,0:ny])
         dat[nx-50:nx,0:ny] = d_avg - 0.5*d_std
-
-    if ( lowerbound_filter > 0): # if -1 then off
-        d_avg = np.mean(dat)
-        d_std = np.std(dat)
-        for i in range(nx):
-            for j in range(ny):
-                el = dat[i,j]
-                if (el - d_avg)/d_std < -lowerbound_filter:
-                    dat[i,j] = d_avg - lowerbound_filter*d_std
-    if ( upperbound_filter > 0): # if -1 then off
-        d_avg = np.mean(dat)
-        d_std = np.std(dat)
-        for i in range(nx):
-            for j in range(ny):
-                el = dat[i,j]
-                if (el - d_avg)/d_std > upperbound_filter:
-                    dat[i,j] = d_avg + upperbound_filter*d_std
     d_max = np.max(dat)
     d_min = np.min(dat)
     d_range = d_max - d_min
@@ -165,18 +172,13 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
     (nx, ny) = dat.shape
     x, y = np.linspace(0, 1, nx), np.linspace(0, 1, ny)
     X, Y = np.meshgrid(x, y)
-    dat = normalize(dat, params['lowerbound_filter'], params['upperbound_filter'], params['truncation'])
+    dat = normalize(dat, params['truncation'])
 
     # determine countours
     print('finding average spots')
     contours = measure.find_contours(dat, params['contour_boundary'])
     spots = []
     rads = []
-    if (params['plot_avg']):
-        f, ax = plt.subplots()
-        ax.imshow(dat)
-        plt.show()
-        plt.close()
 
     # plot contours and averages
     for n, contour in enumerate(contours):
@@ -203,45 +205,51 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
             new_spots.append(spots[i])
     spots = new_spots
 
-    # manual removal
-    if (params["manual_removal_before"]):
-        # remove points
-        bool_arr = np.ones((n,1))
-        if (len(params["removed_before_keys"]) == 0):
-            # print points
-            i = 0
-            for spot in spots:
-                print("{}\t\t\t\t({:.4f},{:.4f})".format(i, spots[i][0], spots[i][1]))
-                i += 1
-            remove_i = input("Enter number of removed point: , -1 to terminate\n")
-            while (int(remove_i) != -1):
-                i = int(remove_i.strip())
-                params["removed_before_keys"].append(i)
-                bool_arr[i] = 0 # remove point i
-                remove_i = input("Enter number of removed point: , -1 to terminate\n")
-        else:
-            for i in params["removed_before_keys"]:
-                print("requested removal of point {}".format(i))
-                bool_arr[i] = 0 # remove point i
-        new_spots = []
-        for i in range(len(spots)):
-            if bool_arr[i]:
-                new_spots.append(spots[i])
-        spots = new_spots
-
     # plot averaged spots
-    if (params['plot_avg']):
-        f, ax = plt.subplots()
-        ax.axis('image')
-        for i in range(len(spots)):
-            circle = plt.Circle((spots[i][0],spots[i][1]), color='r', radius=spots[i][2], linewidth=2.5, fill=False)
-            ax.add_patch(circle)
-        ax.set_xticks([])
-        ax.set_yticks([])
-        plt.show()
-        plt.close()
-        print("exiting after plot_avg, set this false to continue")
-        exit()
+    f, ax = plt.subplots()
+    ax.imshow(dat, origin='lower')
+    ax.axis('image')
+    for i in range(len(spots)):
+        circle = plt.Circle((spots[i][0],spots[i][1]), color='r', radius=spots[i][2], linewidth=2.5, fill=False)
+        ax.text(spots[i][0],spots[i][1], i)
+        ax.add_patch(circle)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_title("showing first guess for AA centers \n save this plot for manual adjustment \n close plot to continue")
+    plt.show()
+
+    target_i = input("enter number of point to adjust, or enter -1 once done: \n")
+    bool_arr = np.ones((n,1))
+    while (int(target_i) != -1):
+        i = int(target_i.strip())
+        params["removed_before_keys"].append(i)
+        remove = input('remove this point? (type y or n): ').lower() == 'y'
+        if remove: bool_arr[i] = 0
+        else:
+            adjust = input('adjust this point? (type y or n): ').lower() == 'y'
+            if adjust:
+                print('click on new center for this point (you picked point {})'.format(target_i))
+                pt = manual_define_point(dat, spots)
+                print(pt)
+                spots[i][0], spots[i][1] = pt[0][0], pt[0][1]
+        target_i = input("enter number of point to adjust, or enter -1 once done: \n")
+    new_spots = []
+    for i in range(len(spots)):
+        if bool_arr[i]: new_spots.append(spots[i])
+    spots = new_spots
+
+    f, ax = plt.subplots()
+    ax.imshow(dat, origin='lower')
+    ax.axis('image')
+    for i in range(len(spots)):
+        circle = plt.Circle((spots[i][0],spots[i][1]), color='r', radius=spots[i][2], linewidth=2.5, fill=False)
+        ax.text(spots[i][0],spots[i][1], i)
+        ax.add_patch(circle)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_title("showing AA centers after manual adjustment, close to continue")
+    plt.savefig("{}/centers_chunk{}of{}.png".format(filedir, chunkno+1, nchunks), dpi=600)
+    plt.show()
 
     # use averaged data as input to guassian fit, guess_prms holds initial guesses
     guess_prms = []
@@ -261,7 +269,6 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
     popt, pcov = curve_fit(_gaussian, xdata, dat.ravel(), guess_prms, xtol=params['xtol'])
 
     # extract fit function and toss out erroneous points
-    print('filtering guassians')
     points = np.zeros((len(spots), 2))
     sigs   = np.zeros((len(spots), 1))
     intens = np.zeros((len(spots), 1))
@@ -273,11 +280,6 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
             points[i, :] = np.nan
             sigs[i] = np.nan
             intens[i] = np.nan
-        elif (np.abs(popt[i*4+3]) > params['upperbound_sigma']):
-            print("removing {},{} from upperbound sigma filter".format(popt[i*4], popt[i*4+1]))
-            points[i, :] = np.nan
-            sigs[i] = np.nan
-            intens[i] = np.nan
         else:
             points[i, :] = popt[i*4:i*4+2]
             sigs[i] = popt[i*4+3]
@@ -286,45 +288,6 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
             except:
                 intens[i] = np.nan
         fit += g
-
-    # filter out points with abnorbally high or low sigma
-    filter(sigs, points, params['sigma_criterion_1'], "initial sigma")
-    # filter out points with abnorbally high or low intensity
-    filter(intens, points, params['inten_criterion'], "intensity")
-    # filter out points with abnorbal sigma more strictly
-    filter(sigs, points, params['sigma_criterion_2'], "second sigma")
-
-    # manual removal
-    if (params["manual_removal"]):
-
-        # show points for user to pick
-        if (params['manual_removal_plot']):
-            f, ax = plt.subplots()
-            ax.imshow(dat, origin='lower', extent=(0, 1, 0, 1))
-            ax.contour(X, Y, fit, colors='w')
-            ax.axis('image')
-            plt.plot(points[:,0], points[:,1], 'ro')
-            plt.show()
-            plt.close()
-
-        # remove points
-        if (len(params["removed_pt_keys"]) == 0):
-            # print points
-            i = 0
-            for point in points:
-                print("{}\t\t\t\t({:.4f},{:.4f})".format(i, points[i,0], points[i,1]))
-                i += 1
-            remove_i = input("Enter number of removed point: , -1 to terminate\n")
-            while (int(remove_i) != -1):
-                i = int(remove_i.strip())
-                params["removed_pts"].append((points[i,0], points[i,1]))
-                params["removed_pt_keys"].append(i)
-                points[i, :] = np.nan
-                remove_i = input("Enter number of removed point: , -1 to terminate\n")
-        else:
-            for i in params["removed_pt_keys"]:
-                print("requested removal of point {}".format(i))
-                points[i, :] = np.nan
 
     # fit mesh
     print('meshing')
@@ -363,7 +326,6 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
             np.abs(a23 - np.pi/3) < params['angle_criterion'] and
             np.abs(a31 - np.pi/3) < params['angle_criterion'] ):
             lens.append(m_l)
-
     for i in range(len(tri.simplices)):
         v1, v2, v3 = points[tri.simplices[i,:]]
         l1, l2, l3 = get_lengths(v1, v2, v3)
@@ -381,9 +343,9 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
             theta_t, theta_s, eps = fit_heterostrain(l1, l2, l3, params)
             thetas.append(np.abs(theta_t) * 180/np.pi)
             het_strains.append(np.abs(eps*100))
-
     plt.title('angle = {:.2f} deg, het strain = {:.2f}%'.format(np.mean(thetas), np.mean(het_strains)))
     plt.savefig("{}/mesh_chunk{}of{}.png".format(filedir, chunkno+1, nchunks), dpi=600)
+    plt.show()
     plt.close()
 
     return thetas, het_strains
@@ -480,33 +442,31 @@ def read(filenm, num_slices):
 if __name__ == '__main__':
 
     params = {
-        "plot_avg"          : False,           # plot the average spots used as a guess for guassian fit
-        "plot_full_mesh"    : False,           # plot full Delaunay mesh including regions discarded from angle filtering
-        "num_slices"        : 2,               # slice data into chunks, will be faster but omits some data
+        # change me to cut data up in the more/less chunks
+        "num_slices"        : 1,               # slice data into chunks, will be faster but omits some data
+
+        # change me if there are too few or too many peaks
         "contour_boundary"  : 0.55,            # initial boundaries will be at this percent intentsity
-        "sigma_criterion_1" : 5.0,             # first sigma filter removes points this many std away
-        "inten_criterion"   : 5.0,             # first intens filter removes points this many std away
-        "sigma_criterion_2" : 5.0,             # second sigma filter removes points this many std away
-        "angle_criterion"   : 0.35,            # will ignore regions where moire triangle angles are greater than angle_criterion rad from pi/3
-        "upperbound_sigma"  : 1e3,             # throw away points with sigmas > this upperbound before filtering
-        "guess_theta_t"     : 0.2,             # degrees of guess angle for twist
-        "guess_theta_s"     : 25,              # guess angle of heterostrain application
-        "guess_hs"          : 0.05,            # guessed percent heterostrain
-        "xtol"              : 1e-1,            # tolerance for gaussian fit, decrease for noisy data where average peaks are ok
-        "removed_pts"       : [],              # for manual remove of points of known indeces
-        "manual_removal"    : True,            # for manual remove of points, will query for labels (set manual_removal_plot=True)
-        "manual_removal_before" : False,       # same as above but for point removal before fit
-        "removed_before_keys" : [],            # to print removed points to output
-        "removed_pt_keys"   : [],              # to print removed points to output
-        'manual_removal_plot' : True,          # bool to plot peaks before manual removal selection
         'guess_radius_criterion' : -0.1,       # decrease me if there are a lot of erroneous mall peaks
         'combine_criterion' : 4.0,             # increase me if plot_avg breaks peaks into two nearby circles
-        'lowerbound_filter' : 2,               # increase me if it looks like the background intensity of plot_avg is too > 0.0, -1 if off
-        'upperbound_filter' : -1,              # increase me to truncate data above a threshold, -1 if off
-        'ml_criterion' : 0.75,                 # remove points that have mean delaunay lengths to nearby points greater than a given criterion
-                                               # due to common issue with delaunay algorithm - will include erroneous connections
         'times_to_combine' : 3,                # times to run through the nearby point combination proecedure
-        'truncation' : False,                  # trucate field of view
+
+        # change me if there are too few or too many triangles that are accepted and used to get theta
+        'ml_criterion' : 1.5,                  # remove points that have mean delaunay lengths to nearby points greater than a given criterion
+                                               # due to common issue with delaunay algorithm - will include erroneous connections
+        "angle_criterion"   : 0.35,            # will ignore regions where moire triangle angles are greater than angle_criterion rad from pi/3
+
+        # change me for special purposes
+        "xtol"              : 1e-1,            # tolerance for gaussian fit,
+                                               # increase for better guassian fits (slower, bad for noisy data, good for clean data)
+        "removed_before_keys" : [],            # manually removed points (will ask you to enter these while running program so can leave blank)
+                                               # or can enter them here if you've already run this program and know what to remove
+        'truncation' : False,                  # to trucate field of view
+
+        # these have very little effect on the results
+        "guess_theta_t"     : 0.2,             # degrees of guess angle for twist (results don't depend on this I've found)
+        "guess_theta_s"     : 25,              # guess angle of heterostrain application (results don't depend on this I've found)
+        "guess_hs"          : 0.05,            # guessed percent heterostrain (results don't depend on this I've found)
     }
 
     # get inputs
