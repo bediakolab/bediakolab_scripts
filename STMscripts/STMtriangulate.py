@@ -226,19 +226,23 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
 
     target_i = input("enter number of point to adjust, or enter -1 once done: \n")
     bool_arr = np.ones((n,1))
-    while (int(target_i) != -1):
-        i = int(target_i.strip())
-        params["removed_before_keys"].append(i)
-        remove = input('remove this point? (type y or n): ').lower() == 'y'
-        if remove: bool_arr[i] = 0
-        else:
-            adjust = input('adjust this point? (type y or n): ').lower() == 'y'
-            if adjust:
-                print('click on new center for this point (you picked point {})'.format(target_i))
-                pt = manual_define_point(dat, spots)
-                print(pt)
-                spots[i][0], spots[i][1] = pt[0][0], pt[0][1]
-        target_i = input("enter number of point to adjust, or enter -1 once done: \n")
+    while (target_i.strip().lower() != '-1'):
+        try:
+            i = int(target_i.strip())
+            params["removed_before_keys"].append(i)
+            remove = input('remove this point? (type y or n): ').lower() == 'y'
+            if remove: bool_arr[i] = 0
+            else:
+                adjust = input('adjust this point? (type y or n): ').lower() == 'y'
+                if adjust:
+                    print('click on new center for this point (you picked point {})'.format(target_i))
+                    pt = manual_define_point(dat, spots)
+                    print(pt)
+                    spots[i][0], spots[i][1] = pt[0][0], pt[0][1]
+            target_i = input("enter number of point to adjust, or enter -1 once done: \n")
+        except:
+            print('something went wrong, please try again')
+            target_i = input("enter number of point to adjust, or enter -1 once done: \n")
     new_spots = []
     for i in range(len(spots)):
         if bool_arr[i]: new_spots.append(spots[i])
