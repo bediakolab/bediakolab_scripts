@@ -17,6 +17,7 @@
 import numpy as np
 from scipy.optimize import curve_fit, least_squares
 import matplotlib.pyplot as plt
+import matplotlib
 from mpl_toolkits.mplot3d import Axes3D
 import pandas as pd
 from skimage import measure
@@ -26,6 +27,20 @@ import os
 import sys
 import seaborn as sns
 from time import sleep
+from matplotlib.colors import Normalize
+from matplotlib.path import Path
+
+
+def make_contour_mask(nx, ny, contour, transpose=False):
+    try: p = Path(contour) # generates a path between the points
+    except: p = contour
+    x, y = np.meshgrid(np.arange(nx), np.arange(ny)) # make a canvas with coordinates
+    x, y = x.flatten(), y.flatten()
+    if transpose: points = np.vstack((y,x)).T
+    else: points = np.vstack((x,y)).T
+    # identifies if each coordinate is contained in the path of points, generating a mask
+    grid = p.contains_points(points)
+    return grid.reshape(nx,ny).T # reshape into a matrix
 
 def manual_define_point(img, spots):
     plt.close('all')
@@ -213,7 +228,7 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
     for i in range(len(spots)):
         rad = spots[i][2]
         circle = plt.Circle((spots[i][0],spots[i][1]), color='r', radius=spots[i][2], linewidth=2.5, fill=False)
-        ax.text(spots[i][0],spots[i][1], i)
+        ax.text(spots[i][0],spots[i][1], i) 
         AA_area += np.pi * rad * rad
         ax.add_patch(circle)
     ax.set_xticks([])
@@ -224,6 +239,7 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
     ax.set_title("showing first guess for AA centers \n save this plot for manual adjustment \n close plot to continue")
     plt.show()
 
+    # to do : change to clicking?
     target_i = input("enter number of point to adjust, or enter -1 once done: \n")
     bool_arr = np.ones((n,1))
     while (target_i.strip().lower() != '-1'):
@@ -256,11 +272,12 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
         rad = spots[i][2]
         circle = plt.Circle((spots[i][0],spots[i][1]), color='r', radius=rad, linewidth=2.5, fill=False)
         AA_area += np.pi * rad * rad
-        ax.text(spots[i][0],spots[i][1], i)
+        ax.text(spots[i][0],spots[i][1], i) #horizontalalignment='center'
         ax.add_patch(circle)
-    print('total AA area in the displayed circles is {} (this will depend on threshold value used)'.format(AA_area))
-    print('total area in scan is {} '.format(nx*ny))
-    print('fraction AA is around {} based on filtered AA circles (this will depend on threshold value used)'.format(AA_area/(nx*ny)))
+
+    #print('total AA area in the displayed circles is {} (this will depend on threshold value used)'.format(AA_area))
+    #print('total area in scan is {} '.format(nx*ny))
+    #print('fraction AA is around {} based on filtered AA circles (this will depend on threshold value used)'.format(AA_area/(nx*ny)))
     ax.set_xticks([])
     ax.set_yticks([])
     ax.set_title("showing AA centers after manual adjustment, close to continue")
@@ -292,14 +309,6 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
     AA_area = 0
     for i in range(len(spots)):
         g = gaussian(X, Y, *popt[i*4:i*4+4])
-        #f, ax = plt.subplots()
-        #ax.imshow(g, origin='lower', extent=(0, 1, 0, 1))
-        #points[i, :] = popt[i*4:i*4+2]
-        #sigs[i] = popt[i*4+2]
-        #radius = sigs[i] * 0.8326182348
-        #circle = plt.Circle((points[i, 0], points[i, 1]), color='g', radius=(radius), linewidth=2.5, fill=False)
-        #ax.add_patch(circle)
-        #plt.show()
         if (popt[i*4] > 1.5 or popt[i*4+1] > 1.5):
             print("removing {},{} from FOV filter".format(popt[i*4], popt[i*4+1]))
             points[i, :] = np.nan
@@ -315,8 +324,8 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
             except:
                 intens[i] = np.nan
         fit += g
-    print('fraction AA is around {} based on guassians (area fraction in the green circles shown) \n--> (using FWHM as diameter, I suggest increasing xtol from default to rely on this value)'.format(AA_area))
-    print('--> WARNING: this is an overestimate as it right now just calculates the area in all green circles and doesnt account for them bleeding out of the FOV')
+    #print('fraction AA is around {} based on guassians (area fraction in the green circles shown) \n--> (using FWHM as diameter, I suggest increasing xtol from default to rely on this value)'.format(AA_area))
+    #print('--> WARNING: this is an overestimate as it right now just calculates the area in all green circles and doesnt account for them bleeding out of the FOV')
 
     # fit mesh
     print('meshing')
@@ -330,24 +339,39 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
         exit(0)
 
     # plot fit guassians and Delaunay mesh
-    f, ax = plt.subplots()
+    f, (ax, ax2, ax3) = plt.subplots(1,3)
+    nx, ny = dat.shape[0], dat.shape[1]
+    AA_mask = np.zeros((nx, ny))
     ax.imshow(dat, origin='lower', extent=(0, 1, 0, 1))
-    ax.contour(X, Y, fit, colors='w')
     ax.axis('image')
+    ax2.imshow(dat, origin='lower', extent=(0, 1, 0, 1))
+    ax2.contour(X, Y, fit, colors='w')
+    ax2.axis('image')
     for i in range(len(sigs)):
         radius = sigs[i] * 0.8326182348
-        circle = plt.Circle((points[i, 0], points[i, 1]), color='g', radius=(radius), linewidth=2.5, fill=False)
+        xcenter = points[i, 0]
+        ycenter = points[i, 1]
+        circle = plt.Circle((xcenter, ycenter), color='w', radius=radius, linewidth=2.5, fill=False)
+        mask = np.fromfunction(lambda x,y: ((x-xcenter*nx)**2 + (y-ycenter*ny)**2) < (radius*nx)**2, (nx,ny)).astype(int) 
+        AA_mask += mask
         ax.add_patch(circle)
+    AA_mask = (AA_mask > 0).astype(int)    
     ax.set_xticks([])
     ax.set_yticks([])
     ax.plot(points[:,0], points[:,1], 'ro')
     ax.triplot(points[:,0], points[:,1], tri.simplices, color='b')
+    ax3.imshow(AA_mask, origin='lower')
 
     # obtain heterostrains and angles from mesh
     print('calculating heterostrain and twist')
     het_strains = []
     thetas = []
     lens = []
+    triangles = []
+    area_percents = []
+    tri_centers = []
+
+    # get threshold for AA area percent calculation
 
     # get traingles within angle criterion for further filtering by length
     for i in range(len(tri.simplices)):
@@ -374,14 +398,72 @@ def mesh_process(dat, filedir, chunkno, nchunks, params):
             center_x = np.mean([v1[0], v2[0], v3[0]])
             center_y = np.mean([v1[1], v2[1], v3[1]])
             theta_t, theta_s, eps = fit_heterostrain(l1, l2, l3, params)
+
+            scaled_v1 = [nx*v1[0], ny*v1[1]]
+            scaled_v2 = [nx*v2[0], ny*v2[1]]
+            scaled_v3 = [nx*v3[0], ny*v3[1]]
+            in_tri_mask = make_contour_mask(nx, ny, [scaled_v1, scaled_v2, scaled_v3], transpose=True)
+            AA_and_in_tri_mask = (in_tri_mask * AA_mask) 
+            AA_f = np.sum(AA_and_in_tri_mask.flatten()) / np.sum(in_tri_mask.flatten())
             thetas.append(np.abs(theta_t) * 180/np.pi)
             het_strains.append(np.abs(eps*100))
-    plt.title('angle = {:.2f} deg, het strain = {:.2f}%'.format(np.mean(thetas), np.mean(het_strains)))
+            triangles.append([v1, v2, v3])
+            area_percents.append(100 * AA_f)
+            tri_centers.append([center_x, center_y])
+
+    print('AA mask determined from gaussian fit using FWHM as diameter - I suggest increasing xtol from default to rely on this value')
+    ax2.set_title('angle = {:.2f} deg, het strain = {:.2f}%'.format(np.mean(thetas), np.mean(het_strains)))
+    ax3.set_title('overall AA = {:.2f}%'.format(100 * np.sum(AA_mask.flatten())/(nx*ny)))
     plt.savefig("{}/mesh_chunk{}of{}.png".format(filedir, chunkno+1, nchunks), dpi=600)
     plt.show()
     plt.close()
+    f, (ax2, ax3, ax4) = plt.subplots(1,3)
 
-    return thetas, het_strains
+    # get colormaps - all plasma
+    colormap_func = matplotlib.cm.get_cmap('plasma')
+    theta_colors = [t if not np.isnan(t) else 0 for t in thetas]
+    norm = Normalize()
+    norm.autoscale(theta_colors)
+    theta_colors = colormap_func(norm(theta_colors))
+    het_strain_colors = [t if not np.isnan(t) else 0 for t in het_strains]
+    norm = Normalize()
+    norm.autoscale(het_strain_colors)
+    het_strain_colors = colormap_func(norm(het_strain_colors))     
+    areapercent_colors = [t if not np.isnan(t) else 0 for t in area_percents]
+    norm = Normalize()
+    norm.autoscale(areapercent_colors)
+    areapercent_colors = colormap_func(norm(areapercent_colors))     
+
+    for i in range(len(triangles)):
+
+        v1, v2, v3 = triangles[i][:]
+        tri_center = tri_centers[i]
+        
+        for axis in [ax2, ax3, ax4]:
+            axis.plot([v2[0], v3[0]], [v2[1], v3[1]], color="grey", linewidth=0.5)
+            axis.plot([v2[0], v1[0]], [v2[1], v1[1]], color="grey", linewidth=0.5)
+            axis.plot([v3[0], v1[0]], [v3[1], v1[1]], color="grey", linewidth=0.5)
+                
+        if not np.isnan(thetas[i]):
+            trix = [v1[0], v2[0], v3[0]]
+            triy = [v1[1], v2[1], v3[1]]
+            ax2.fill(trix, triy, color=theta_colors[i])
+            ax3.fill(trix, triy, color=het_strain_colors[i])
+            ax4.fill(trix, triy, color=areapercent_colors[i])
+            ax2.text(tri_center[0], tri_center[1], "{:.2f}".format(thetas[i]), color='grey', fontsize='xx-small', horizontalalignment='center')
+            ax3.text(tri_center[0], tri_center[1], "{:.2f}".format(het_strains[i]), color='grey', fontsize='xx-small', horizontalalignment='center')
+            ax4.text(tri_center[0], tri_center[1], "{:.2f}".format(area_percents[i]), color='grey', fontsize='xx-small', horizontalalignment='center')
+
+    # after have triangles now can calculate percent AA area in each 
+    ax2.axis('off')
+    ax3.axis('off')
+    ax4.axis('off')
+    ax2.set_title('$<\\theta_m> = {:.2f}^o$'.format(np.nanmean(thetas)))
+    ax3.set_title('$<\epsilon> = {:.2f}\%$'.format(np.nanmean(het_strains)))
+    ax4.set_title('$<AA_f> = {:.2f}\%$'.format(np.nanmean(area_percents)))
+    plt.show()
+    return thetas, het_strains, area_percents
+ 
 
 # reads in excel file and returns partitioned data
 def read_excel(filenm, num_slices):
@@ -518,17 +600,20 @@ if __name__ == '__main__':
         # process chunk i
         print("processing chunk {} of {} ".format(i+1,nchunks))
         (nx, ny) = chunks[i].shape
-        thetas, het_strains = mesh_process(chunks[i], filedir, i, nchunks, params)
+        thetas, het_strains, area_percents = mesh_process(chunks[i], filedir, i, nchunks, params)
 
         # plot histograms
-        f, (ax1, ax2) = plt.subplots(1,2)
+        f, (ax1, ax2, ax3) = plt.subplots(1,3)
         ax1.hist(thetas, bins='auto')
         ax1.set_title('local twist angle')
         ax2.hist(het_strains, bins='auto')
         ax2.set_title('local heterostrain')
+        ax3.hist(area_percents, bins='auto')
+        ax3.set_title('local AA area percent')
         plt.savefig("{}/histo_chunk{}of{}.png".format(filedir, i+1,nchunks))
 
         # write data
         write("{}/heterostrains_chunk{}of{}.txt".format(filedir, i+1,nchunks), "percent heterostrain obtained", het_strains)
         write("{}/angles_chunk{}of{}.txt".format(filedir, i+1,nchunks), "twist angles (degrees)", thetas)
+        write("{}/areapercent_chunk{}of{}.txt".format(filedir, i+1,nchunks), "area percents of AA per moire triangle", thetas)
         write("{}/output_chunk{}of{}.txt".format(filedir, i+1,nchunks), "parameters used:", params)
